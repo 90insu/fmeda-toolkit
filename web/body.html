@@ -1,0 +1,99 @@
+<div class="wrap">
+
+<header class="top">
+  <p class="kicker">ISO 26262-5 &middot; hardware architectural metrics</p>
+  <h1>FMEDA Bench</h1>
+  <p class="lead">Upload the inputs, pick how conservative the analysis should be, and get SPFM, LFM and PMHF per safety goal &mdash; with the reasoning behind every classification written into an Excel report.</p>
+</header>
+
+<div class="demo-flag">
+  <span><b>Demo build.</b> Loaded with a fictional Battery Junction Box Controller. Every failure rate and coverage claim in it was invented. Nothing you select or upload here leaves your computer &mdash; this page does all its work in the browser.</span>
+</div>
+
+<section>
+  <div class="step"><span class="n">01</span><h2>Inputs</h2><span class="hint">Schematic is required. The rest sharpen the result.</span></div>
+
+  <div class="controls">
+    <div>
+      <label class="f" for="temp">Temperature profile</label>
+      <select id="temp">
+        <option value="25">Passenger compartment &mdash; 25 &deg;C mean</option>
+        <option value="40" selected>Underhood, ambient &mdash; 40 &deg;C mean</option>
+        <option value="70">Underhood, near engine &mdash; 70 &deg;C mean</option>
+        <option value="85">Power electronics enclosure &mdash; 85 &deg;C mean</option>
+      </select>
+      <p class="note" id="tempnote"></p>
+    </div>
+    <div>
+      <label class="f" for="src">Component failure rate source</label>
+      <select id="src">
+        <option value="iec61709">IEC 61709:2017</option>
+        <option value="sn29500" selected>SN 29500 (Siemens Norm)</option>
+        <option value="iec62380">IEC TR 62380:2004 &mdash; withdrawn</option>
+      </select>
+      <p class="note" id="srcnote"></p>
+    </div>
+    <div>
+      <label class="f" for="level">Conservatism</label>
+      <select id="level">
+        <option value="nominal">60 &middot; Nominal</option>
+        <option value="conservative" selected>90 &middot; Conservative</option>
+        <option value="worst_case">99 &middot; Worst case</option>
+      </select>
+      <p class="note" id="levelnote"></p>
+    </div>
+  </div>
+
+  <div class="slots" id="slots"></div>
+</section>
+
+<section>
+  <div class="step"><span class="n">02</span><h2>Completeness</h2><span class="hint">What is missing, and what it costs</span></div>
+  <div id="gate"></div>
+</section>
+
+<section>
+  <div class="step"><span class="n">03</span><h2>Results</h2><span class="hint">Recomputed as you change anything above</span></div>
+  <div class="goals" id="goals"></div>
+
+  <details id="mechdet">
+    <summary>Safety mechanisms &mdash; edit any coverage figure and the metrics move</summary>
+    <div class="body"><div class="tablewrap"><table id="mechtable"></table></div></div>
+  </details>
+
+  <details id="polidet">
+    <summary id="polisum">Conservatism policy changes</summary>
+    <div class="body"><div class="tablewrap"><table id="politable"></table></div></div>
+  </details>
+
+  <details open>
+    <summary>Why each fault is safety critical</summary>
+    <div class="body">
+      <p class="note" style="margin:0 0 12px">Every single-point and residual fault, ranked by uncovered failure rate. This text is written into the report's rationale column verbatim.</p>
+      <div class="row" style="margin-bottom:12px" id="goaltabs"></div>
+      <div class="tablewrap"><table id="rowtable"></table></div>
+    </div>
+  </details>
+</section>
+
+<section>
+  <div class="step"><span class="n">04</span><h2>Report</h2><span class="hint">Excel, one sheet per safety goal</span></div>
+  <p>The workbook carries the full analysis per goal, the mechanism register with stated against applied coverage, every policy change with its reason, the open review items, the assumption register, and a provenance sheet recording exactly what went in. Metric cells are live formulas, so editing a coverage figure in the sheet recalculates SPFM.</p>
+  <div class="row">
+    <button class="btn" id="xlsx">Generate Excel report</button>
+    <span class="said" id="saidxlsx" hidden></span>
+  </div>
+</section>
+
+<div class="caveats">
+  <h2 style="margin-bottom:12px">Read before quoting any figure above</h2>
+  <ul>
+    <li><b>PMHF is a lower bound.</b> Single-point and residual terms only. The dual-point failure term needs explicit pair enumeration and is not modelled.</li>
+    <li><b>The conservatism level is a set of deterministic derating rules</b>, not a statistical confidence interval. The same inputs at the same level always give the same numbers. It does not mean the result is 60, 90 or 99 percent likely.</li>
+    <li><b>Failure rates are flat at the profile temperature.</b> IEC 61709 stress factors are not applied yet, so changing the temperature profile currently changes the report's provenance record and nothing else.</li>
+    <li><b>Targets come from ISO 26262-5:2018 Tables 4, 5 and 6</b>, which are informative. Confirm them against your own copy before relying on them.</li>
+    <li><b>The bundled example is fictional</b> and deliberately misses its ASIL D target at the nominal level. A first-pass architecture that does not close is a more useful demonstration than one that does.</li>
+  </ul>
+</div>
+
+</div>

@@ -1,0 +1,83 @@
+# ---------------------------------------------------------------------------
+# Part library — reusable failure-rate and failure-mode distribution data.
+#
+# Libraries are deliberately separate from analyses. A library answers
+# "what does this part do when it breaks, and how often" and is reused across
+# projects. An analysis answers "in THIS design, does that matter, and what
+# catches it".
+#
+# SYNTHETIC DATA. Every number below was invented for this example. Do not use
+# it for anything real.
+# ---------------------------------------------------------------------------
+schema: fmeda.library/v1
+
+library:
+  id: generic
+  description: "Synthetic generic part library for the BJB example"
+  # Provenance travels with the data, not in a side document. An assessor's
+  # first question about any lambda is "where did this come from".
+  source:
+    reference: "SN 29500-x (cited, not reproduced)"
+    revision: "example"
+    conditions: "T_a = 40 C, 50% electrical derating, 15000 h mission"
+  confidence: estimated        # measured | field_data | supplier_claim | standard | estimated
+
+parts:
+
+  res_thickfilm_0603:
+    description: "Thick film chip resistor, 0603"
+    lambda_fit: 0.5
+    failure_modes:
+      # fractions must sum to 1.0 (validated)
+      open:  { fraction: 0.60, description: "Open circuit" }
+      short: { fraction: 0.05, description: "Short circuit" }
+      drift: { fraction: 0.35, description: "Resistance drift beyond tolerance" }
+
+  cap_x7r_0805:
+    description: "MLCC, X7R, 0805"
+    lambda_fit: 1.2
+    failure_modes:
+      short:       { fraction: 0.55, description: "Dielectric short" }
+      open:        { fraction: 0.15, description: "Open, typically flex crack" }
+      degradation: { fraction: 0.30, description: "Capacitance loss / ESR rise" }
+
+  opamp_generic:
+    description: "Single-supply operational amplifier"
+    lambda_fit: 8.0
+    failure_modes:
+      output_stuck_high: { fraction: 0.20 }
+      output_stuck_low:  { fraction: 0.20 }
+      offset_drift:      { fraction: 0.35, description: "Slow out-of-spec offset" }
+      oscillation:       { fraction: 0.10 }
+      supply_short:      { fraction: 0.15 }
+
+  mcu_lockstep:
+    description: "Automotive MCU, lockstep core pair, ECC SRAM, internal monitors"
+    lambda_fit: 62.0
+    # Real MCU vendors ship this breakdown in the safety manual, usually per
+    # hard macro. Mirror their granularity rather than inventing your own.
+    failure_modes:
+      core_corrupt:   { fraction: 0.30, description: "Erroneous computation, both cores unaffected by common cause" }
+      core_halt:      { fraction: 0.15, description: "Core stops executing" }
+      sram_bitflip:   { fraction: 0.22, description: "Single/double bit error in data SRAM" }
+      flash_corrupt:  { fraction: 0.10, description: "Program flash content corruption" }
+      clock_drift:    { fraction: 0.08, description: "PLL frequency out of spec" }
+      io_stuck:       { fraction: 0.10, description: "GPIO / peripheral pin stuck" }
+      supply_monitor: { fraction: 0.05, description: "Internal voltage monitor fault" }
+
+  gate_driver:
+    description: "High-side contactor gate driver with current sense"
+    lambda_fit: 24.0
+    failure_modes:
+      output_stuck_off: { fraction: 0.30, description: "Cannot energise coil" }
+      output_stuck_on:  { fraction: 0.25, description: "Coil energised regardless of command" }
+      sense_offset:     { fraction: 0.25, description: "Current sense reads low" }
+      sense_open:       { fraction: 0.20, description: "Current sense open" }
+
+  contactor_coil:
+    description: "Main HV contactor coil and mechanism"
+    lambda_fit: 45.0
+    failure_modes:
+      fails_open:    { fraction: 0.40, description: "Contacts open / will not close" }
+      welded_closed: { fraction: 0.35, description: "Contacts welded" }
+      coil_short:    { fraction: 0.25 }

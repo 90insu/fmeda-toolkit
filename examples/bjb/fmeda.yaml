@@ -1,0 +1,290 @@
+# ---------------------------------------------------------------------------
+# FMEDA analysis — fictional Battery Junction Box Controller (BJB-C1).
+#
+# SYNTHETIC. The item, the architecture, the failure rates and every diagnostic
+# coverage claim below were invented for this example.
+#
+#   fmeda check   examples/bjb/fmeda.yaml      # validate only
+#   fmeda compute examples/bjb/fmeda.yaml      # metrics
+#   fmeda compute examples/bjb/fmeda.yaml --goal SG1 --explain
+# ---------------------------------------------------------------------------
+schema: fmeda.analysis/v1
+
+meta:
+  item: "Battery Junction Box Controller (fictional)"
+  variant: "BJB-C1 rev B"
+  analyst: "i.kim"
+  date: 2026-09-27
+  status: draft                 # draft | reviewed | released
+  libraries:
+    - library/generic.yaml
+
+mission_profile:
+  # PMHF integrates over the vehicle lifetime; SPFM and LFM do not depend on it.
+  lifetime_h: 15000
+  # Interval between opportunities to detect a latent fault. Usually the driving
+  # cycle for power-up tests, or the runtime test period where one exists.
+  mpf_detection_interval_h: 1.0
+
+safety_goals:
+  SG1:
+    statement: "The BJB shall not open the main contactors while the vehicle is in motion."
+    asil: D
+    ftti_ms: 100
+    safe_state: "Contactors held closed, torque limited, driver warning."
+  SG2:
+    statement: "The BJB shall open the main contactors within 500 ms of a detected HV isolation fault."
+    asil: B
+    ftti_ms: 500
+    safe_state: "Contactors open, HV bus discharged."
+
+# Targets default to ISO 26262-5:2018 Tables 4, 5 and 6 when omitted. Those
+# tables are informative — override here when the OEM sets its own, which is
+# common. Verify the defaults against your own copy of the standard.
+targets:
+  D: { spfm: 0.99, lfm: 0.90, pmhf_fit: 10 }
+  B: { spfm: 0.90, lfm: 0.60, pmhf_fit: 100 }
+
+# ---------------------------------------------------------------------------
+# Safety mechanisms are first-class and named. Diagnostic coverage lives here,
+# once, not copied onto every failure mode it covers — so raising the ECC claim
+# from 0.99 to 0.999 is one edit and one diff line, and every element that
+# relies on it moves together.
+# ---------------------------------------------------------------------------
+mechanisms:
+
+  LOCKSTEP:
+    name: "Lockstep core comparator"
+    dc_spf: 0.99          # coverage w.r.t. single-point / residual faults
+    dc_lf: 0.90           # coverage w.r.t. latent faults
+    reaction_time_ms: 5   # detection + reaction; must fit inside the FTTI
+    covers_goals: [SG1, SG2]
+    evidence:
+      reference: "MCU safety manual, SM_CPU_01"
+      rationale: "Cycle-by-cycle comparison of redundant core outputs."
+      confidence: supplier_claim
+    # Mechanisms are hardware too. A mechanism with its own failure rate can be
+    # the latent half of a dual-point failure — this is how LFM stops being a
+    # number you type in by hand.
+    implemented_by: [U1]
+
+  ECC_SRAM:
+    name: "SECDED ECC on data SRAM with background scrub"
+    dc_spf: 0.99
+    dc_lf: 0.85
+    reaction_time_ms: 10
+    covers_goals: [SG1, SG2]
+    evidence:
+      reference: "MCU safety manual, SM_SRAM_03"
+      rationale: "Single-bit correct, double-bit detect. Scrub period 10 ms."
+      confidence: supplier_claim
+    implemented_by: [U1]
+
+  WDG_EXT:
+    name: "External windowed watchdog with question/answer"
+    dc_spf: 0.90
+    dc_lf: 0.60
+    reaction_time_ms: 40
+    covers_goals: [SG1]
+    evidence:
+      reference: "DES-118 rev 4 §6.2"
+      rationale: "Q/A protocol; incorrect or late answer de-asserts enable."
+      confidence: measured
+    implemented_by: [U4]
+
+  CONTACTOR_FB:
+    name: "Contactor position feedback with plausibility check"
+    dc_spf: 0.95
+    dc_lf: 0.70
+    reaction_time_ms: 60
+    covers_goals: [SG1, SG2]
+    evidence:
+      reference: "DES-118 rev 4 §7.1"
+      rationale: "Aux contact state compared against commanded state each 10 ms."
+      confidence: measured
+    implemented_by: [U3, R7]
+
+  POWERUP_TEST:
+    name: "Power-up self test of gate driver path"
+    dc_spf: 0.0           # runs at key-on only: cannot meet a 100 ms FTTI
+    dc_lf: 0.90           # but it is exactly what clears latent faults
+    covers_goals: [SG1, SG2]
+    evidence:
+      reference: "DES-118 rev 4 §9.4"
+      rationale: "Driver output toggled against feedback before contactor close."
+      confidence: measured
+    implemented_by: [U1, U3]
+
+# How coverage combines when more than one mechanism is claimed on one failure
+# mode. `max` takes the best single claim and is what most assessors accept
+# without argument. `independent` computes 1 - prod(1 - dc), which is only
+# defensible with a dependent-failure analysis showing the mechanisms share no
+# failure cause — ISO 26262-9 Clause 7. The tool records which you chose and
+# prints it in the report.
+dc_combination: max
+
+# ---------------------------------------------------------------------------
+# Elements. `violates` is the classification that actually drives the metrics:
+#   violates: []          -> safe fault, contributes only to lambda_total
+#   violates: [SG1]       -> safety-related w.r.t. SG1; covered portion becomes
+#                            MPF, uncovered portion becomes SPF (no mechanism)
+#                            or RF (mechanism present but incomplete)
+# An element can be safety-related for one goal and not another. That is the
+# case spreadsheets get wrong most often, and it is why goals are explicit here
+# instead of implied by a single column.
+# ---------------------------------------------------------------------------
+elements:
+
+  - id: U1
+    description: "Host MCU, lockstep pair"
+    part: mcu_lockstep
+    quantity: 1
+    modes:
+      core_corrupt:
+        effect: "Erroneous contactor command issued"
+        violates: [SG1, SG2]
+        mechanisms: [LOCKSTEP, WDG_EXT]
+      core_halt:
+        effect: "No command issued; driver enable decays, contactors open"
+        violates: [SG1]
+        mechanisms: [WDG_EXT]
+      sram_bitflip:
+        effect: "Corrupted state variable, possible spurious open command"
+        violates: [SG1, SG2]
+        mechanisms: [ECC_SRAM]
+      flash_corrupt:
+        effect: "Corrupted program; unpredictable command"
+        violates: [SG1, SG2]
+        mechanisms: [WDG_EXT]
+      clock_drift:
+        effect: "Timing of contactor control loop out of spec"
+        violates: [SG1]
+        mechanisms: [WDG_EXT]
+      io_stuck:
+        effect: "Enable line stuck; contactor command not conveyed"
+        violates: [SG1]
+        mechanisms: [CONTACTOR_FB]
+      supply_monitor:
+        effect: "Internal monitor inoperative"
+        # Does not by itself violate a goal — it is a diagnostic. Latent.
+        violates: []
+        latent_for: [SG1]
+        mechanisms: [POWERUP_TEST]
+
+  - id: U3
+    description: "Contactor gate driver, high side"
+    part: gate_driver
+    quantity: 2
+    modes:
+      output_stuck_off:
+        effect: "Contactor cannot be held closed -> opens while driving"
+        violates: [SG1]
+        mechanisms: [CONTACTOR_FB]
+      output_stuck_on:
+        effect: "Contactor cannot be opened on isolation fault"
+        violates: [SG2]
+        mechanisms: [CONTACTOR_FB]
+      sense_offset:
+        effect: "Coil current misreported; no immediate goal violation"
+        violates: []
+        latent_for: [SG1, SG2]
+        mechanisms: [POWERUP_TEST]
+      sense_open:
+        effect: "Coil current unreadable; plausibility check degraded"
+        violates: []
+        latent_for: [SG1, SG2]
+        mechanisms: [POWERUP_TEST]
+
+  - id: U4
+    description: "External watchdog"
+    part: opamp_generic          # stand-in for the example
+    quantity: 1
+    modes:
+      output_stuck_high:
+        effect: "Watchdog never trips — diagnostic lost, no direct violation"
+        violates: []
+        latent_for: [SG1]
+        mechanisms: [POWERUP_TEST]
+      output_stuck_low:
+        effect: "Spurious reset, enable de-asserts, contactors open in motion"
+        violates: [SG1]
+        mechanisms: [CONTACTOR_FB]
+      offset_drift:
+        effect: "Window timing drift"
+        violates: []
+        latent_for: [SG1]
+        mechanisms: [POWERUP_TEST]
+      oscillation:
+        effect: "Repeated resets"
+        violates: [SG1]
+        mechanisms: [CONTACTOR_FB]
+      supply_short:
+        effect: "Loss of watchdog supply, enable de-asserts"
+        violates: [SG1]
+        mechanisms: [CONTACTOR_FB]
+
+  - id: R7
+    description: "Contactor feedback divider, high leg"
+    part: res_thickfilm_0603
+    quantity: 4
+    modes:
+      open:
+        effect: "Feedback reads low; plausibility check degraded"
+        violates: []
+        latent_for: [SG1, SG2]
+        mechanisms: [POWERUP_TEST]
+      short:
+        effect: "Feedback reads closed regardless of true state"
+        violates: []
+        latent_for: [SG1, SG2]
+        mechanisms: [POWERUP_TEST]
+      drift:
+        effect: "Threshold margin reduced, still within detection band"
+        violates: []
+        # Not safety-related and not latent: a genuinely safe fault.
+
+  - id: K1
+    description: "Main HV contactor"
+    part: contactor_coil
+    quantity: 2
+    modes:
+      fails_open:
+        effect: "Contactor opens while driving"
+        violates: [SG1]
+        mechanisms: [CONTACTOR_FB]
+      welded_closed:
+        effect: "Contactor cannot open on isolation fault"
+        violates: [SG2]
+        mechanisms: [CONTACTOR_FB, POWERUP_TEST]
+      coil_short:
+        effect: "Driver current limit trips, contactor opens"
+        violates: [SG1]
+        mechanisms: [CONTACTOR_FB]
+
+  - id: C12
+    description: "Bulk decoupling, logic supply"
+    part: cap_x7r_0805
+    quantity: 12
+    safety_related: false        # shorthand: every mode is a safe fault
+    modes:
+      short:       { effect: "Supply collapse", violates: [] }
+      open:        { effect: "Ripple increase, within spec", violates: [] }
+      degradation: { effect: "ESR rise", violates: [] }
+
+# ---------------------------------------------------------------------------
+# An assumption register. Assessors ask for this and it is always missing.
+# Referencing an assumption id from a mechanism's evidence block is allowed.
+# ---------------------------------------------------------------------------
+assumptions:
+  A1:
+    statement: "Vehicle lifetime of 15000 operating hours per OEM mission profile."
+    status: open                # open | agreed | closed
+    owner: "system safety"
+  A2:
+    statement: "Power-up self test executes on every drive cycle; no key-on is skipped."
+    status: open
+    owner: "software"
+  A3:
+    statement: "Lockstep comparator and external watchdog have no shared failure cause. Required before dc_combination may be set to 'independent'."
+    status: open
+    owner: "hardware"
